@@ -33,6 +33,13 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS messages_conversation ON messages(owner_sub, conversation_id, created_at)`,
   // The daily usage count: replies generated per owner per day.
   `CREATE INDEX IF NOT EXISTS messages_owner_role_created ON messages(owner_sub, role, created_at)`,
+  // Screenshot reads in the reply studio, counted separately from chats.
+  `CREATE TABLE IF NOT EXISTS reply_scans (
+    id TEXT PRIMARY KEY,
+    owner_sub TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS reply_scans_owner_created ON reply_scans(owner_sub, created_at)`,
 ]
 
 let ready: Promise<void> | undefined
@@ -104,6 +111,24 @@ export async function repliesToday(db: D1Database, owner: string): Promise<numbe
     .bind(owner, start)
     .first<{ n: number }>()
   return Number(row?.n ?? 0)
+}
+
+/** Screenshot reads today, used to cap the vision model's spend. */
+export async function replyScansToday(db: D1Database, owner: string): Promise<number> {
+  const { start } = utcDay()
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM reply_scans WHERE owner_sub = ? AND created_at >= ?`)
+    .bind(owner, start)
+    .first<{ n: number }>()
+  return Number(row?.n ?? 0)
+}
+
+/** Records one successful screenshot read. */
+export function recordReplyScan(db: D1Database, owner: string): Promise<unknown> {
+  return db
+    .prepare(`INSERT INTO reply_scans (id, owner_sub, created_at) VALUES (?, ?, ?)`)
+    .bind(id(), owner, now())
+    .run()
 }
 
 /** A conversation title from its first message: the first line, cut at a word. */

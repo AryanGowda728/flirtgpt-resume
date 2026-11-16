@@ -7,6 +7,7 @@ import type { AppContext, Env } from './env'
 import { account } from './routes/account'
 import { chat } from './routes/chat'
 import { conversations } from './routes/conversations'
+import { reply } from './routes/reply'
 
 const app = new Hono<AppContext>()
 
@@ -21,6 +22,7 @@ api.use('*', requireUser, requireDb)
 api.route('/', account)
 api.route('/conversations', conversations)
 api.route('/chat', chat)
+api.route('/reply', reply)
 app.route('/api', api)
 
 app.onError((error, c) => {

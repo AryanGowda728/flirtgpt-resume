@@ -46,3 +46,15 @@ export type ChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'done'; message: Message; usage: Me['usage'] }
   | { type: 'error'; code: string; message: string }
+
+export interface ReplySuggestion {
+  tone: string
+  text: string
+}
+
+export interface ReplyResult {
+  /** A short read of the conversation: what is happening and what to do next. */
+  analysis: string
+  /** Three copy-ready replies in different tones. */
+  replies: ReplySuggestion[]
+}
