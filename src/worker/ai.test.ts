@@ -1,7 +1,7 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from 'bun:test'
 
-import { AiError, aiConfigured, complete, isModelId, resetModelCache } from '../worker/ai'
-import { DEFAULT_MODEL } from '../shared/config'
+import { AiError, aiConfigured, complete, generateReplies, isModelId, resetModelCache } from '../worker/ai'
+import { DEFAULT_MODEL, REPLY_MODEL } from '../shared/config'
 
 const MODELS_URL = 'https://api.groq.com/openai/v1/models'
 const CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
@@ -229,6 +229,72 @@ describe('ai', () => {
       expect(chatInvoked).toBe(true)
       expect(abortErrorThrown).toBe(true)
       await expect(gen.next()).resolves.toMatchObject({ done: true, value: undefined })
+    })
+  })
+
+  describe('generateReplies', () => {
+    let originalFetch: typeof globalThis.fetch
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch
+    })
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    test('sends the screenshot to the vision model and parses the replies', async () => {
+      let requestBody: { model?: string; messages?: { role: string; content: unknown }[] } = {}
+      globalThis.fetch = vi.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestBody = JSON.parse(String(init?.body))
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    analysis: 'She is teasing you and leaving the door open.',
+                    replies: [
+                      { tone: 'Playful', text: 'Careful, I might take that as an invitation.' },
+                      { tone: 'Warm', text: 'You are trouble. I like it.' },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      })
+
+      const result = await generateReplies({ GROQ_API_KEY: 'gsk-test' } as never, {
+        image: 'data:image/png;base64,abc',
+        tone: 'Playful',
+      })
+
+      expect(result.analysis).toContain('teasing')
+      expect(result.replies).toHaveLength(2)
+      expect(result.replies[0]).toMatchObject({ tone: 'Playful' })
+      expect(result.replies[0]!.text).toContain('invitation')
+      expect(requestBody.model).toBe(REPLY_MODEL)
+      const userMessage = requestBody.messages?.find((message) => message.role === 'user')
+      expect(userMessage?.content).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'image_url' })]),
+      )
+    })
+
+    test('throws a usable error when the model returns no replies', async () => {
+      globalThis.fetch = vi.fn().mockImplementation(async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ analysis: 'The screenshot is unreadable.', replies: [] }) } }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+
+      await expect(
+        generateReplies({ GROQ_API_KEY: 'gsk-test' } as never, { text: 'Her: hey', tone: 'Playful' }),
+      ).rejects.toMatchObject({ code: 'empty', message: 'The screenshot is unreadable.' })
     })
   })
 })

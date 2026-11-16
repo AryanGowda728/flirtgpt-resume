@@ -3,7 +3,8 @@
 // supports it, with Groq's errors turned into messages the app can show. The
 // key is read from env here and nowhere else.
 
-import { GROQ_BASE_URL, MAX_OUTPUT_TOKENS, MODELS, type ModelId } from '../shared/config'
+import { GROQ_BASE_URL, MAX_OUTPUT_TOKENS, MODELS, REPLY_MODEL, REPLY_SYSTEM_PROMPT, type ModelId } from '../shared/config'
+import type { ReplyResult } from '../shared/types'
 import type { Env } from './env'
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
@@ -90,6 +91,8 @@ async function failure(response: Response): Promise<AiError> {
   if (status === 404) return new AiError('model_unavailable', 'This model is not available right now. Try another.', 503)
   if (status === 429) return new AiError('busy', 'Groq is busy right now. Try again in a moment.', 429)
   if (status === 400) return new AiError('refused', detail ? `The request was refused: ${detail}` : 'The request was refused.', 400)
+  if (status === 413) return new AiError('too_large', 'That screenshot is too large. Try a smaller one.', 413)
+  if (status === 415) return new AiError('unsupported_image', 'That image format is not supported. Use a PNG or JPG.', 415)
   return new AiError('unavailable', 'The model is unavailable right now. Try again shortly.', 503)
 }
 
@@ -174,4 +177,77 @@ async function* readSse(response: Response, signals: { client?: AbortSignal; tim
   } finally {
     reader.releaseLock()
   }
+}
+
+/**
+ * Reads a chat screenshot (or a pasted conversation) and returns three
+ * copy-ready replies plus a short read of the conversation. Uses Groq's
+ * vision-capable Llama 4 Scout. The image is a data URL, never stored.
+ */
+export async function generateReplies(
+  env: Env,
+  input: { image?: string; text?: string; context?: string; tone: string },
+): Promise<ReplyResult> {
+  const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+  const instruction = [
+    `Write the next reply in a ${input.tone.toLowerCase()} tone.`,
+    input.text ? `The pasted conversation is included below. Read it carefully and answer the last message.` : 'Read the screenshot carefully and answer the last message.',
+    input.context ? `Extra context from the user: ${input.context}` : '',
+    'Return JSON only, exactly in the shape described in the system prompt.',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  content.push({ type: 'text', text: instruction })
+  if (input.image) content.push({ type: 'image_url', image_url: { url: input.image } })
+  if (input.text) content.push({ type: 'text', text: `Pasted conversation:\n${input.text}` })
+
+  let response: Response
+  try {
+    response = await fetch(`${apiBase(env)}/chat/completions`, {
+      method: 'POST',
+      headers: headers(env),
+      body: JSON.stringify({
+        model: REPLY_MODEL,
+        messages: [
+          { role: 'system', content: REPLY_SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        temperature: 0.85,
+        max_tokens: 1_000,
+        response_format: { type: 'json_object' },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new AiError('timeout', 'The model took too long to answer. Try again.', 504)
+    }
+    throw new AiError('network', 'Could not reach Groq.', 503)
+  }
+  if (!response.ok) throw await failure(response)
+
+  const body = (await response.json()) as { choices?: { message?: { content?: string | null } }[] }
+  const raw = body.choices?.[0]?.message?.content
+  if (typeof raw !== 'string' || !raw.trim()) throw new AiError('malformed', 'The model returned an empty reply. Try again.', 502)
+
+  let parsed: unknown
+  try {
+    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()
+    parsed = JSON.parse(cleaned)
+  } catch {
+    throw new AiError('malformed', 'The model returned an unexpected format. Try again.', 502)
+  }
+  const data = parsed as { analysis?: unknown; replies?: unknown }
+  const analysis = typeof data.analysis === 'string' ? data.analysis.trim().slice(0, 600) : ''
+  const replies = Array.isArray(data.replies)
+    ? data.replies
+        .filter((reply): reply is { tone: unknown; text: unknown } => Boolean(reply) && typeof reply === 'object')
+        .map((reply) => ({ tone: typeof reply.tone === 'string' ? reply.tone.trim().slice(0, 24) : 'Reply', text: typeof reply.text === 'string' ? reply.text.trim().slice(0, 600) : '' }))
+        .filter((reply) => reply.text.length > 0)
+        .slice(0, 3)
+    : []
+  if (!replies.length) {
+    throw new AiError('empty', analysis || 'I could not read a conversation in that image. Try a clearer screenshot.', 422)
+  }
+  return { analysis, replies }
 }
