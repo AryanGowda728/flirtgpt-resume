@@ -58,7 +58,7 @@ export function Chat() {
           {
             onConversation: (created) => {
               owned.current = created.id
-              navigate(`/c/${created.id}`, { replace: true })
+              navigate(`/chat/c/${created.id}`, { replace: true })
             },
           },
         )
@@ -126,7 +126,7 @@ export function Chat() {
       <div className="grid flex-1 place-items-center p-6 text-center">
         <div>
           <p className="text-[15px] font-medium">This chat is not here any more.</p>
-          <button type="button" onClick={() => navigate('/')} className="mt-2 text-[13.5px] text-muted underline underline-offset-2 hover:text-fg">
+          <button type="button" onClick={() => navigate('/chat')} className="mt-2 text-[13.5px] text-muted underline underline-offset-2 hover:text-fg">
             Start a new one
           </button>
         </div>

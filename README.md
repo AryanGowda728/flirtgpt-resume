@@ -1,14 +1,19 @@
 # FlirtGPT
 
-A flirty, playful AI chat app: conversations in a sidebar, streamed replies
-rendered as Markdown, a model picker, stop and regenerate, and a daily limit per
-user. It runs on Freebuff Sites with Sign in with Freebuff and D1, and it can
-also be deployed as a normal Next.js/Vite app to Vercel. Everything is scoped to
-the signed-in user. The API key stays on the server.
+A screenshot-to-reply flirting assistant. Upload a chat screenshot (or paste
+the conversation), pick a tone, and get three natural replies you can copy
+straight into Instagram, Snapchat, or any messaging app. The original chat mode
+is still there as a practice space. It runs on Freebuff Sites with Sign in with
+Freebuff and D1; the API key stays on the server.
+
+The reply studio reads images with Groq's vision model
+`meta-llama/llama-4-scout-17b-16e-instruct` and returns three copy-ready options
+plus a short read of the conversation. Screenshot reads are capped at 30 per
+user per UTC day to protect the Groq credits.
 
 Most customisation is one file: `src/shared/config.ts` holds the name, the
-assistant's persona, the models people may pick, the limits and the suggestions
-on an empty chat.
+reply persona, the models people may pick, the tones, the limits and the
+suggestions on an empty chat.
 
 ## Run it
 
@@ -22,6 +27,27 @@ On localhost without a `FREEBUFF_CLIENT_ID`, the app signs you in as a local
 development user and seeds one sample conversation. Until a Groq API key is
 configured, the app shows a setup card with a link to get one; it unlocks on its
 own when the key arrives.
+
+## The reply studio
+
+Open `/` after signing in. You can:
+
+- Drop, upload, or paste a screenshot (PNG/JPG/WebP). It is resized in the
+  browser before it is sent, so the original file never leaves the device.
+- Paste the conversation instead, if the screenshot is hard to read.
+- Add optional context (where you met, how long you have been talking).
+- Pick a tone: Playful, Warm, Bold, or Chill.
+- Copy any of the three replies with one click.
+
+The backend route is `POST /api/reply`. It validates the image data URL and size,
+enforces the daily screenshot limit, calls Groq, and returns JSON only. No image
+is stored in D1.
+
+## The practice chat
+
+The original chat is still available at `/chat`: conversations in a sidebar,
+streamed Markdown replies, a model picker, stop and regenerate, and a daily limit
+per user. It is useful for practising a longer conversation.
 
 ## The API key
 
@@ -98,12 +124,15 @@ backend for real replies; the frontend itself is portable.
   streaming, error mapping). `routes/chat.ts` is one turn: it checks the limits,
   stores the question, streams the reply as server-sent events and stores it when
   done, keeping a stopped reply's partial text.
+  `routes/reply.ts` is the screenshot-to-reply endpoint;
   `routes/conversations.ts` lists, renames and deletes chats;
   `routes/account.ts` serves `/me` (capabilities and today's usage) and
   `/models`. `db.ts` owns the schema (created on first request), `auth.ts` the
   Freebuff integration and the loopback-only development user, `seed.ts` the
   sample conversation.
-- `src/app/` is the React app. `pages/Chat.tsx` is the thread and composer;
+- `src/app/` is the React app. `pages/ReplyStudio.tsx` is the screenshot flow;
+  `lib/image.ts` resizes screenshots in the browser. `pages/Chat.tsx` is the
+  practice thread and composer;
   `lib/turn.ts` holds the reply in flight so it survives the move from `/` to
   `/c/:id`; `lib/stream.ts` reads the event stream; `components/Markdown.tsx`
   renders replies (no raw HTML, links open in a new tab); `components/ui.tsx`

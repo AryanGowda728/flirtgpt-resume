@@ -108,7 +108,7 @@ export function Settings() {
             onSuccess: () => {
               setConfirm(false)
               toast('All chats deleted')
-              navigate('/')
+              navigate('/chat')
             },
             onError: () => toast('Could not delete your chats', 'danger'),
           })

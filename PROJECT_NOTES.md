@@ -2,31 +2,37 @@
 
 ## What it is
 
-FlirtGPT is a flirty, playful AI chat app: conversations in a sidebar, streamed replies rendered as Markdown, a model picker, stop and regenerate, and a daily limit per user. It runs on Freebuff Sites with Sign in with Freebuff and D1, and can also be deployed as a normal Vite app with a static frontend.
+FlirtGPT is a screenshot-to-reply flirting assistant. The user uploads a chat screenshot (or pastes the conversation), picks a tone, and gets three natural replies they can copy into Instagram, Snapchat, or any messaging app. The original chat mode is still available at `/chat` as a practice space.
 
 ## Architecture
 
-- `src/app/` — React app (pages, components, API client, streaming reader).
-- `src/worker/` — Cloudflare Worker (Hono): auth, D1 schema, Groq client, chat SSE route, account and conversation routes.
-- `src/shared/` — types and configuration shared by both sides.
-- `e2e/` — Playwright spec and HTTP smoke tests.
+- `src/app/pages/ReplyStudio.tsx` — the screenshot flow: dropzone, clipboard paste, pasted-text fallback, tone picker, result cards.
+- `src/app/lib/image.ts` — resizes screenshots in the browser to a 1400px JPEG before sending.
+- `src/worker/routes/reply.ts` — `POST /api/reply`: validates the image data URL and size, checks the daily limit, calls Groq, and returns JSON.
+- `src/worker/ai.ts` — Groq client. `generateReplies` sends the image and prompt to the vision model and parses the JSON reply.
+- `src/shared/config.ts` — reply model, tones, system prompt, and limits.
+- `src/worker/db.ts` — D1 schema, including `reply_scans` for the daily screenshot count.
+- `src/app/pages/Chat.tsx` — the practice chat.
 
 ## Request flow
 
-1. User sends a message from the React composer.
-2. `POST /api/chat` validates input, checks the daily limit, stores the conversation and user message, and creates an empty assistant row.
-3. The Worker calls Groq’s OpenAI-compatible `/chat/completions` endpoint with `stream: true`.
-4. Groq streams SSE chunks; the Worker forwards each delta as a `ChatEvent` to the browser.
-5. The browser renders the Markdown as tokens arrive; on completion the Worker stores the final reply.
-6. If the user stops or disconnects, the Worker aborts upstream and keeps the partial reply, marked as interrupted.
+1. The user uploads or pastes a screenshot in the reply studio.
+2. The browser resizes it to a readable JPEG data URL; the original file stays local.
+3. `POST /api/reply` validates the data URL, size, tone, and text limits.
+4. The route checks `reply_scans` for today and refuses after 30 successful reads.
+5. The Worker calls Groq’s `/chat/completions` with `meta-llama/llama-4-scout-17b-16e-instruct`, the system prompt, and the image.
+6. Groq returns JSON with `analysis` and up to three `replies`.
+7. The Worker records one `reply_scans` row and returns the JSON.
+8. The browser renders the analysis and the reply cards with copy buttons.
 
-## Security and limits
+## Privacy and security
 
-- Every `/api/*` route requires a signed-in user and scopes queries by `owner_sub`.
-- Mutations must be same-origin.
-- Models are allowlisted; message length, context size, and output tokens are capped.
-- Daily limit: 50 replies per user per UTC day, counting stopped and regenerated replies.
 - The Groq API key is read only in the Worker and never sent to the browser.
+- Screenshots are not stored in D1 or R2.
+- Every `/api/*` route requires a signed-in user; mutations must be same-origin.
+- Images must be PNG, JPG, or WebP data URLs and must fit the base64 limit.
+- The reply studio is capped at 30 reads per user per UTC day.
+- The practice chat keeps its own 50-reply daily limit.
 
 ## How to run
 
