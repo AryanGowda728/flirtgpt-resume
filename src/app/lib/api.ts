@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { Conversation, Me, Message, ModelInfo } from '../../shared/types'
+import type { Conversation, Me, Message, ModelInfo, ReplyResult } from '../../shared/types'
 
 export class ApiError extends Error {
   constructor(
@@ -54,6 +54,13 @@ export const useMe = () =>
     refetchInterval: (query) => (query.state.data && !query.state.data.capabilities.ai ? 4_000 : false),
   })
 export const useModels = () => useQuery({ queryKey: ['models'], queryFn: () => api<{ items: ModelInfo[] }>('/models'), staleTime: 60_000 })
+
+export function useGenerateReplies() {
+  return useMutation({
+    mutationFn: (input: { image?: string; text?: string; context?: string; tone: string }) =>
+      api<ReplyResult>('/reply', { method: 'POST', json: input }),
+  })
+}
 export const useConversations = () => useQuery({ queryKey: ['conversations'], queryFn: () => api<{ items: Conversation[] }>('/conversations') })
 export const useConversation = (id: string | undefined) =>
   useQuery({

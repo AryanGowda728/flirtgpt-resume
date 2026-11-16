@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { Menu as MenuIcon, MoreHorizontal, Pencil, Plus, Settings as SettingsIcon, Trash2, X } from 'lucide-react'
+import { Menu as MenuIcon, MoreHorizontal, Pencil, Plus, Settings as SettingsIcon, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router'
 
@@ -84,16 +84,25 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
           </Button>
         )}
       </div>
-      <div className="px-3">
+      <div className="space-y-0.5 px-3">
         <NavLink
           to="/"
           end
+          className={({ isActive }) =>
+            cx('flex h-9 items-center gap-2 rounded-control px-3 text-[13.5px] font-medium transition-colors', isActive ? 'bg-surface text-fg shadow-card' : 'text-muted hover:bg-surface hover:text-fg')
+          }
+        >
+          <Sparkles className="size-4" />
+          Reply studio
+        </NavLink>
+        <NavLink
+          to="/chat"
           className={({ isActive }) =>
             cx('flex h-9 items-center gap-2 rounded-control px-3 text-[13.5px] font-medium transition-colors', isActive && !turn ? 'bg-surface text-fg shadow-card' : 'text-muted hover:bg-surface hover:text-fg')
           }
         >
           <Plus className="size-4" />
-          New chat
+          Practice chat
         </NavLink>
       </div>
       <nav className="scrollbar-thin mt-3 flex-1 overflow-y-auto px-3 pb-3" aria-label="Chats">
@@ -138,7 +147,7 @@ function ConversationRow({ conversation, streaming }: { conversation: Conversati
   return (
     <li className="group relative">
       <NavLink
-        to={`/c/${conversation.id}`}
+        to={`/chat/c/${conversation.id}`}
         className={cx('flex h-9 items-center gap-2 rounded-control pl-3 pr-9 text-[13.5px] transition-colors', active ? 'bg-surface text-fg shadow-card' : 'text-muted hover:bg-surface hover:text-fg')}
       >
         <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
@@ -201,7 +210,7 @@ function ConversationRow({ conversation, streaming }: { conversation: Conversati
           remove.mutate(conversation.id, {
             onSuccess: () => {
               setConfirm(false)
-              if (active) navigate('/', { replace: true })
+              if (active) navigate('/chat', { replace: true })
             },
             onError: () => toast('Could not delete this chat', 'danger'),
           })
